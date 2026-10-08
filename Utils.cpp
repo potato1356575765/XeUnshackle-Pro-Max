@@ -293,6 +293,7 @@ BOOL CWriteFile(const CHAR* FilePath, const VOID* Data, DWORD Size)
 	if (WriteFile(fHandle, Data, writeSize, &writeSize, NULL) != TRUE)
 	{
 		cprintf("[CWriteFile] WriteFile failed. Error: %X", GetLastError());
+		CloseHandle(fHandle);
 		return FALSE;
 	}
 	CloseHandle(fHandle);
@@ -497,20 +498,102 @@ VOID Dump1blRomToFile()
 extern WCHAR wCPUKeyBuf[];
 extern WCHAR wDVDKeyBuf[];
 extern WCHAR wConTypeBuf[];
-// TODO: Handle this better. Dumps buffer whitespace into file. Good enough for now
+WORD XCONFIG_SECURED_CATEGORY = 0x2;
+WORD XCONFIG_SECURED_MAC_ADDRESS = 0x1;
 VOID SaveConsoleDataToFile()
 {
 	DisableButtons = TRUE;
-	char ConsoleInfoBuf[160];
+	char ConsoleInfoBuf[1024];
 	ZeroMemory(ConsoleInfoBuf, sizeof(ConsoleInfoBuf));
-	sprintf_s(ConsoleInfoBuf, "%ws\n%ws\n%ws\n", wConTypeBuf, wCPUKeyBuf, wDVDKeyBuf);
+	int len = sprintf_s(ConsoleInfoBuf, "%ws\r\n%ws\r\n%ws\r\n", wConTypeBuf, wCPUKeyBuf, wDVDKeyBuf);
 
-	if (CWriteFile("GAME:\\ConsoleInfo.txt", ConsoleInfoBuf, sizeof(ConsoleInfoBuf)))
+	// MAC address currently stored in the secure config (may differ from the original if a stealth has changed it)
+	BYTE MACAddress[6];
+	if (NT_SUCCESS(ExGetXConfigSetting(XCONFIG_SECURED_CATEGORY, XCONFIG_SECURED_MAC_ADDRESS, MACAddress, 6, NULL)))
+	{
+		len += sprintf_s(ConsoleInfoBuf + len, sizeof(ConsoleInfoBuf) - len, "MAC: %02X-%02X-%02X-%02X-%02X-%02X\r\n",
+			MACAddress[0], MACAddress[1], MACAddress[2], MACAddress[3], MACAddress[4], MACAddress[5]);
+	}
+
+	// Fuselines
+	len += sprintf_s(ConsoleInfoBuf + len, sizeof(ConsoleInfoBuf) - len, "\r\nFuses:\r\n");
+	for (DWORD i = 0; i < 12; i++)
+	{
+		QWORD fuse = Hvx::HvGetFuseline(i);
+		len += sprintf_s(ConsoleInfoBuf + len, sizeof(ConsoleInfoBuf) - len, "fuseset %02d: %08X%08X\r\n", i, (DWORD)(fuse >> 32), (DWORD)(fuse & 0xffffffff));
+	}
+
+	if (CWriteFile("GAME:\\ConsoleInfo.txt", ConsoleInfoBuf, len))
 		ShowNotify(currentLocalisation->SaveConInfo_Success);
 	else
 		ShowNotify(currentLocalisation->SaveConInfo_Failed);
 
 	DisableButtons = FALSE;
+}
+
+// Dump the keyvault currently held in HV memory.
+// NOTE: If a stealth server has already been loaded this may be a spoofed KV rather than the consoles own.
+#define KV_SIZE 0x4000
+#define KVFilePath "GAME:\\KV.bin"
+VOID DumpKVToFile()
+{
+	DisableButtons = TRUE;
+	BYTE* KVBuf = (BYTE*)malloc(KV_SIZE);
+	QWORD kvAddress = Hvx::HvPeekQWORD(0x00000002000163C0);
+
+	if (KVBuf == NULL || kvAddress == 0 || Hvx::HvPeekBytes(kvAddress, KVBuf, KV_SIZE) != S_OK)
+	{
+		cprintf("[DumpKVToFile] FAILED! Unable to read KV...");
+		ShowNotify(currentLocalisation->DumpKV_Fail);
+	}
+	else if (CWriteFile(KVFilePath, KVBuf, KV_SIZE))
+	{
+		cprintf("[DumpKVToFile] SUCCESS! Dumped to %s", KVFilePath);
+		ShowNotify(currentLocalisation->DumpKV_Success);
+	}
+	else
+	{
+		cprintf("[DumpKVToFile] FAILED! Failed to write file...");
+		ShowNotify(currentLocalisation->DumpKV_Fail);
+	}
+
+	if (KVBuf)
+		free(KVBuf);
+	DisableButtons = FALSE;
+}
+
+// SMC queries. Buffers are 0x10 bytes - see HalSendSMCMessage
+#define SMC_CMD_QUERY_TEMPS		0x07
+#define SMC_CMD_QUERY_VERSION	0x12
+BOOL GetSMCVersion(BYTE* Major, BYTE* Minor)
+{
+	BYTE smcMsg[0x10];
+	BYTE smcResp[0x10];
+	ZeroMemory(smcMsg, sizeof(smcMsg));
+	ZeroMemory(smcResp, sizeof(smcResp));
+	smcMsg[0] = SMC_CMD_QUERY_VERSION;
+	HalSendSMCMessage(smcMsg, smcResp);
+	if (smcResp[0] != SMC_CMD_QUERY_VERSION)
+		return FALSE;
+	*Major = smcResp[2];
+	*Minor = smcResp[3];
+	return TRUE;
+}
+
+// Temps are returned as 8.8 fixed point little endian values. Order: CPU, GPU, MEM, BRD
+BOOL GetSMCTemps(FLOAT* Temps)
+{
+	BYTE smcMsg[0x10];
+	BYTE smcResp[0x10];
+	ZeroMemory(smcMsg, sizeof(smcMsg));
+	ZeroMemory(smcResp, sizeof(smcResp));
+	smcMsg[0] = SMC_CMD_QUERY_TEMPS;
+	HalSendSMCMessage(smcMsg, smcResp);
+	if (smcResp[0] != SMC_CMD_QUERY_TEMPS)
+		return FALSE;
+	for (int i = 0; i < 4; i++)
+		Temps[i] = (FLOAT)(smcResp[i * 2 + 1] | (smcResp[i * 2 + 2] << 8)) / 256.0f;
+	return TRUE;
 }
 
 // User is expected to have already taken a full nand backup so this is just an extra precaution.
@@ -519,8 +602,6 @@ VOID SaveConsoleDataToFile()
 // Obviously we want to only store this the very first time the app has been loaded.
 // If the user chooses to ignore and delete this backup then it's on them.
 
-WORD XCONFIG_SECURED_CATEGORY = 0x2;
-WORD XCONFIG_SECURED_MAC_ADDRESS = 0x1;
 #define MACFilePath "GAME:\\OriginalMACAddress.bin"
 VOID BackupOrigMAC()
 {

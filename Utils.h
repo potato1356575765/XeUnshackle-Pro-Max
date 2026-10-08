@@ -130,3 +130,8 @@ VOID Dump1blRomToFile();
 VOID SaveConsoleDataToFile();
 
 VOID BackupOrigMAC();
+
+VOID DumpKVToFile();
+
+BOOL GetSMCVersion(BYTE* Major, BYTE* Minor);
+BOOL GetSMCTemps(FLOAT* Temps);

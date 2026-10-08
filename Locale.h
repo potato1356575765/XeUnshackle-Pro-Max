@@ -31,12 +31,17 @@ typedef struct _LocalisationMessages_t
     // Save Orig MAC
     wchar_t* Dump_MAC_Success;
     wchar_t* Dump_MAC_Fail;
+    // Dump KV Notify
+    wchar_t* DumpKV_Success;
+    wchar_t* DumpKV_Fail;
     // Main Screen Text
     wchar_t* MainInfo;
     wchar_t* MainScrDL;
     wchar_t* MainScrBtnSaveInfo;
     wchar_t* MainScrBtnDump1BL;
     wchar_t* MainScrBtnExit;
+    wchar_t* MainScrBtnDumpKV;
+    wchar_t* MainScrTemps;
 
 } LocalisationMessages_t;
 

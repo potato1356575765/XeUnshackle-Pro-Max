@@ -39,6 +39,9 @@ WCHAR wCPUKeyBuf[150];
 WCHAR wDVDKeyBuf[50];
 WCHAR wConTypeBuf[50];
 WCHAR wBadStorageStatusBuf[21];
+WCHAR wTempsBuf[100];
+DWORD dwLastTempPoll = 0;
+#define TEMP_POLL_INTERVAL_MS 2000
 
 //--------------------------------------------------------------------------------------
 // Name: class Sample
@@ -258,6 +261,21 @@ HRESULT XeUnshackle::Update()
             {
                 Dump1blRomToFile();
             }
+            else if (pGamepad->wPressedButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER)
+            {
+                DumpKVToFile();
+            }
+        }
+
+        // Refresh the temps periodically. No need to hammer the SMC every frame
+        DWORD dwNow = GetTickCount();
+        if (dwLastTempPoll == 0 || (dwNow - dwLastTempPoll) >= TEMP_POLL_INTERVAL_MS)
+        {
+            dwLastTempPoll = dwNow;
+            FLOAT Temps[4];
+            ZeroMemory(wTempsBuf, sizeof(wTempsBuf));
+            if (GetSMCTemps(Temps))
+                swprintf_s(wTempsBuf, L"%ls: CPU %.1fC  GPU %.1fC\nMEM %.1fC  BRD %.1fC", currentLocalisation->MainScrTemps, Temps[0], Temps[1], Temps[2], Temps[3]);
         }
     }
 
@@ -341,10 +359,14 @@ HRESULT XeUnshackle::Render()
         m_Font.DrawText(0, 490, YellowText, wCPUKeyBuf);
         m_Font.DrawText(0, 520, YellowText, wDVDKeyBuf);
 
+        // Live temps
+        m_Font.DrawText(840, 420, YellowText, wTempsBuf);
+
         m_Font.DrawText(0, 570, YellowText, L"https://github.com/Byrom90/XeUnshackle");
         m_Font.DrawText(0, 600, YellowText, L"https://byrom.uk");
 
         // User input with buttons - Make these white so they display correctly and stand out to the user
+        m_Font.DrawText(840, 500, WhiteText, currentLocalisation->MainScrBtnDumpKV);// RB button icon with text
         m_Font.DrawText(840, 530, WhiteText, currentLocalisation->MainScrBtnSaveInfo);// X button icon with text 
         m_Font.DrawText(840, 560, WhiteText, currentLocalisation->MainScrBtnDump1BL);// Y button icon with text
 
@@ -475,7 +497,11 @@ VOID __cdecl main()
     swprintf_s(wTitleHeaderBuf, L"%ls XeUnshackle v%.2f BETA %ls", GLYPH_RIGHT_TICK, APP_VERS, GLYPH_LEFT_TICK);
     // Motherboard type
     ZeroMemory(wConTypeBuf, sizeof(wConTypeBuf));
-    swprintf_s(wConTypeBuf, L"Console type: %S", GetMoboByHWFlags().c_str());
+    BYTE SMCMajor, SMCMinor;
+    if (GetSMCVersion(&SMCMajor, &SMCMinor))
+        swprintf_s(wConTypeBuf, L"Console type: %S | SMC: %d.%d", GetMoboByHWFlags().c_str(), SMCMajor, SMCMinor);
+    else
+        swprintf_s(wConTypeBuf, L"Console type: %S", GetMoboByHWFlags().c_str());
     // cpu key
     QWORD fuse3 = Hvx::HvGetFuseline(3);
     QWORD fuse5 = Hvx::HvGetFuseline(5);

@@ -31,6 +31,11 @@ Nothing here is particularly new. It's simply a collection of existing code that
 - Ability to dump 1BL to file via button press. This may be particularly useful for those wanting to use the Low Level [Xenon](https://github.com/xenon-emu/xenon) Emulator.
 - Automatic dumping of the current MAC address on first load. This is often changed by stealth servers during the initial KV spoofing. Only other way to retrieve the original is from a nand backup taken BEFORE loading a stealth.
 - Applies Usbdsec patches to allow non-360 XInput controllers. Thanks [InvoxiPlayGames](https://github.com/InvoxiPlayGames)
+- **[Pro Max]** Live CPU / GPU / RAM / Board temperatures on the main screen, read from the SMC every 2 seconds.
+- **[Pro Max]** SMC version shown next to the console type.
+- **[Pro Max]** Dump the KeyVault to `KV.bin` via RB. Read-only from HV memory, saved to the usb. **Never share your KV!** Note: if a stealth server was loaded before this, the KV in memory may be a spoofed one rather than your own, so take a real nand backup too.
+- **[Pro Max]** `ConsoleInfo.txt` (X) now also includes the SMC version, current MAC address and all 12 fuselines, and no longer pads the file with junk null bytes.
+- **[Pro Max]** None of the added features write to the nand (flash). Everything is read-only and saved to the usb.
 - Xbox 360 Bad Storage support for unlocking up to 2 TB internal storage. Read the official release notes [Here](https://fatxplorer.eaton-works.com/bad-storage/) for setup instructions. Thanks [EatonZ](https://github.com/EatonZ)
 
 ## Usage
